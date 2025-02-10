@@ -12,7 +12,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { formatCurrency, formatNumber } from '../utils/format';
 import { StatCard } from '../components/StatCard';
-import toast from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 import { theme } from '../styles/theme';
 import { NumberGrid } from '../components/NumberGrid';
 import { Button } from '../components/Button';
@@ -46,11 +46,7 @@ export function BuyRaffle() {
   const [tickets, setTickets] = React.useState<Ticket[]>([]);
   const [selectedNumbers, setSelectedNumbers] = React.useState<number[]>([]);
   const [isProcessing, setIsProcessing] = React.useState(false);
-  const [isMobile, setIsMobile] = React.useState(false);
-  const [isReserving, setIsReserving] = React.useState(false);
   const [paymentUrl, setPaymentUrl] = React.useState<string | null>(null);
-  const [reservationTimeout, setReservationTimeout] = React.useState<NodeJS.Timeout | null>(null);
-  const [reservationExpiry, setReservationExpiry] = useState<Date | null>(null);
 
   React.useEffect(() => {
     fetchRaffle();
@@ -72,14 +68,6 @@ export function BuyRaffle() {
       fetchTickets();
     }
   }, [raffle, id]);
-
-  React.useEffect(() => {
-    return () => {
-      if (reservationTimeout) {
-        clearTimeout(reservationTimeout);
-      }
-    };
-  }, [reservationTimeout]);
 
   const fetchRaffle = async () => {
     try {
@@ -126,8 +114,6 @@ export function BuyRaffle() {
         return;
       }
 
-      console.log('Buscando tickets para rifa:', id);
-
       const { data, error } = await supabase
         .rpc('get_raffle_tickets', { 
           p_raffle_id: id 
@@ -138,9 +124,6 @@ export function BuyRaffle() {
         throw error;
       }
 
-      console.log('Tickets recebidos:', data);
-
-      // Criar array com todos os números
       const allTickets: Ticket[] = Array.from(
         { length: raffle.total_numbers }, 
         (_, i) => ({
@@ -149,7 +132,6 @@ export function BuyRaffle() {
         })
       );
 
-      // Atualizar status dos números vendidos
       if (data && Array.isArray(data)) {
         data.forEach((ticket: Ticket) => {
           const index = ticket.number - 1;
@@ -159,7 +141,6 @@ export function BuyRaffle() {
         });
       }
 
-      console.log('Tickets processados:', allTickets);
       setTickets(allTickets);
     } catch (err) {
       console.error('Erro ao buscar tickets:', err);
@@ -167,16 +148,10 @@ export function BuyRaffle() {
     }
   };
 
-  const playSelectSound = () => {
-    const audio = new Audio('/select.mp3'); // Adicionar arquivo de som
-    audio.volume = 0.2;
-    audio.play().catch(() => {});
-  };
-
   const handleNumberClick = async (ticketNumber: number, currentStatus: string) => {
-    // Para o usuário comum, suponha que só seja possível alterar de "available" para "pending".
     if (currentStatus !== 'available') {
-      return; // se o ticket já não estiver disponível, não faz nada
+      toast.error('Este número não está mais disponível.');
+      return;
     }
   
     const newStatus: 'pending' = 'pending';
@@ -187,95 +162,9 @@ export function BuyRaffle() {
           ticket.number === ticketNumber ? { ...ticket, status: newStatus } : ticket
         )
       );
+      // Adiciona o número selecionado à lista
+      setSelectedNumbers(prev => [...prev, ticketNumber]);
     }
-  };
-
-  const checkReservationExpiry = useCallback(() => {
-    if (reservationExpiry && new Date() > reservationExpiry) {
-      toast.error('Sua reserva expirou. Selecione os números novamente.');
-      setSelectedNumbers([]);
-      setReservationExpiry(null);
-      navigate('/dashboard');
-    }
-  }, [reservationExpiry, navigate]);
-
-  useEffect(() => {
-    if (reservationExpiry) {
-      const interval = setInterval(checkReservationExpiry, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [reservationExpiry, checkReservationExpiry]);
-
-  const handleBuy = async () => {
-    if (selectedNumbers.length === 0) {
-      toast.error('Selecione pelo menos um número');
-      return;
-    }
-
-    setIsProcessing(true);
-    const loadingToast = toast.loading('Processando sua compra...');
-
-    try {
-      setIsReserving(true);
-      const tickets = selectedNumbers.map(number => ({
-        number,
-        raffle_id: id
-      }));
-
-      await purchaseService.reserveNumbers(tickets);
-      
-      // Definir expiração para 15 minutos
-      const expiry = new Date();
-      expiry.setMinutes(expiry.getMinutes() + 15);
-      setReservationExpiry(expiry);
-
-      // 2. Criar ordem de pagamento
-      const amount = selectedNumbers.length * raffle.price_per_number;
-      const paymentOrder = await purchaseService.createPaymentOrder(
-        raffle.id,
-        selectedNumbers,
-        amount
-      );
-
-      // 3. Configurar timeout para a reserva (15 minutos)
-      const timeout = setTimeout(() => {
-        toast.error('Reserva expirada. Selecione os números novamente.');
-        navigate('/dashboard');
-      }, 15 * 60 * 1000);
-
-      setReservationTimeout(timeout);
-      setPaymentUrl(paymentOrder.payment_url);
-
-      // 4. Abrir modal de pagamento
-      setShowPaymentModal(true);
-      toast.success('Números reservados! Complete o pagamento.', { id: loadingToast });
-    } catch (err) {
-      console.error('Erro na compra:', err);
-      toast.error('Erro ao processar compra', { id: loadingToast });
-    } finally {
-      setIsProcessing(false);
-      setIsReserving(false);
-    }
-  };
-
-  const getTicketColor = (status: string, isSelected: boolean) => {
-    if (isSelected) 
-      return 'bg-purple-100 text-purple-800 ring-2 ring-purple-500 ring-offset-2 transform scale-105';
-    
-    switch (status) {
-      case 'paid':
-        return 'bg-gray-100 text-gray-400 cursor-not-allowed';
-      case 'pending':
-        return 'bg-yellow-50 text-yellow-600 cursor-not-allowed';
-      default:
-        return 'bg-white hover:bg-gray-50 text-gray-800 cursor-pointer border border-gray-200 hover:border-purple-300';
-    }
-  };
-
-  const scrollToNumbers = () => {
-    document.getElementById('numbers-grid')?.scrollIntoView({ 
-      behavior: 'smooth' 
-    });
   };
 
   const updateTicketStatus = async (ticketNumber: number, newStatus: 'pending' | 'available') => {
@@ -293,6 +182,46 @@ export function BuyRaffle() {
     
     console.log('Ticket atualizado com sucesso:', data);
     return true;
+  };
+
+  const handleBuy = async () => {
+    if (selectedNumbers.length === 0) {
+      toast.error('Selecione pelo menos um número');
+      return;
+    }
+
+    if (!raffle) {
+      toast.error('Dados da rifa não carregados corretamente.');
+      return;
+    }
+
+    setIsProcessing(true);
+    const loadingToast = toast.loading('Processando sua compra...');
+
+    try {
+      const tickets = selectedNumbers.map(number => ({
+        number,
+        raffle_id: id!
+      }));
+
+      await purchaseService.reserveNumbers(tickets);
+      
+      // Criar ordem de pagamento
+      const amount = selectedNumbers.length * raffle.price_per_number;
+      const paymentOrder = await purchaseService.createPaymentOrder(
+        raffle.id,
+        selectedNumbers,
+        amount
+      );
+
+      setPaymentUrl(paymentOrder.payment_url);
+      toast.success('Números reservados! Complete o pagamento.', { id: loadingToast });
+    } catch (err) {
+      console.error('Erro na compra:', err);
+      toast.error('Erro ao processar compra', { id: loadingToast });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   if (loading) {
@@ -365,30 +294,6 @@ export function BuyRaffle() {
 
         {/* Números */}
         <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6">
-          {/* Header da seção */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Escolha seus Números</h2>
-              <p className="text-sm text-gray-500">Clique nos números desejados para selecioná-los</p>
-            </div>
-            
-            {/* Legenda */}
-            <div className="flex flex-wrap gap-4 text-sm">
-              <div className="flex items-center">
-                <div className="w-3 h-3 rounded-full bg-white border border-gray-200 mr-2"></div>
-                <span>Disponível</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-3 h-3 rounded-full bg-purple-100 mr-2"></div>
-                <span>Selecionado</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-3 h-3 rounded-full bg-gray-100 mr-2"></div>
-                <span>Indisponível</span>
-              </div>
-            </div>
-          </div>
-
           <NumberGrid 
             tickets={tickets}
             selectedNumbers={selectedNumbers}
@@ -411,7 +316,6 @@ export function BuyRaffle() {
               <Button
                 variant="primary"
                 size="lg"
-                fullWidth={isMobile}
                 onClick={handleBuy}
                 disabled={selectedNumbers.length === 0}
                 isLoading={isProcessing}
@@ -427,4 +331,4 @@ export function BuyRaffle() {
       </div>
     </div>
   );
-} 
+}

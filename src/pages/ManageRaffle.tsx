@@ -311,8 +311,15 @@ export function ManageRaffle() {
         navigate('/auth');
         return;
       }
+
       const { data: isAdmin } = await supabase.rpc('is_admin');
       console.log("Valor retornado de is_admin:", isAdmin);
+
+      if (!isAdmin) {
+        navigate('/dashboard');
+        return;
+      }
+
       setIsAdminUser(isAdmin);
     };
     checkAdmin();
