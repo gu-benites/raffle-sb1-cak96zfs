@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  raffle-app:
+    build: .
+    networks:
+      - app_network
+      - traefik_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.raffle.rule=Host(`rifa.daianefreitas.com`)"
+      - "traefik.http.services.raffle.loadbalancer.server.port=80"
+      - "traefik.docker.network=traefik_network"
+
+networks:
+  app_network:
+    external: true
+  traefik_network:
+    external: true
